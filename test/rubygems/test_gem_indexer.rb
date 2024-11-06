@@ -474,6 +474,50 @@ class TestGemIndexer < Gem::TestCase
     end
   end
 
+  def test_update_index_prerelease
+    gems = File.join(@indexerdir, "gems")
+    util_clear_gems
+    FileUtils.rm_rf gems
+    FileUtils.mkdir_p gems
+
+    create_gem = proc do |version|
+      spec = util_spec "test", version
+      util_build_gem spec
+      FileUtils.mv Dir[File.join(@gemhome, "cache", "*.gem")], gems
+    end
+
+    assert_versions_file = proc do |expected_content|
+      versions_file = File.read File.join @indexerdir, "versions"
+      actual_content = versions_file.lines[2..].join("\n")
+      assert_match expected_content, actual_content
+    end
+
+    indexer = proc do
+      Gem::Indexer.new(@indexerdir, build_modern: true, build_compact: true)
+    end
+
+    # 1.0.0 (generate_index)
+    create_gem.call '1.0.0'
+    indexer.call.generate_index
+    assert_versions_file.call /test 1\.0\.0 .*/
+
+    # 1.0.1 (generate_index)
+    create_gem.call '1.0.1'
+    indexer.call.generate_index
+    assert_versions_file.call /test 1\.0\.0,1\.0\.1 .*/
+
+    # 1.0.2 (update_index)
+    create_gem.call '1.0.2'
+    indexer.call.update_index
+    assert_versions_file.call /test 1\.0\.0,1\.0\.1 .*?\ntest 1\.0\.2/m
+
+    # 1.0.3.rc0 (update_index)
+    create_gem.call '1.0.3.rc0'
+    indexer.call.update_index
+    assert_versions_file.call /test 1\.0\.0,1\.0\.1 .*?\ntest 1\.0\.2\ntest 1\.0\.3\.rc0/m
+  end
+
+
   def assert_indexed(dir, name)
     file = File.join dir, name
     assert File.exist?(file), "#{file} does not exist"
